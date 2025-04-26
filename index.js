@@ -1,7 +1,6 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const chalk = require("chalk");
-const readline = require("readline");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
@@ -18,7 +17,14 @@ const CONFIG = {
   },
   starterPokemon: ["bulbasaur", "charmander", "squirtle"],
   maxTeamSize: 6,
-  imageTempDir: "./temp"
+  imageTempDir: "./temp",
+  items: {
+    pokeball: { type: "catch", quantity: 5 },
+    potion: { type: "heal", healAmount: 20, quantity: 3 },
+    revive: { type: "revive", quantity: 1 },
+    superball: { type: "catch", catchRate: 1.5, quantity: 2 }
+  },
+  phoneNumber: process.env.WHATSAPP_NUMBER || "1234567890" // Replace with your number
 };
 
 // Initialize data storage and temp directory
@@ -36,7 +42,8 @@ function initData() {
     },
     items: {
       pokeball: { type: "catch", quantity: 5 },
-      potion: { type: "heal", healAmount: 20, quantity: 3 }
+      potion: { type: "heal", healAmount: 20, quantity: 3 },
+      revive: { type: "revive", quantity: 1 }
     }
   };
 
@@ -50,11 +57,6 @@ function initData() {
 initData();
 
 // Helper functions
-const question = (text) => {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => rl.question(text, resolve));
-};
-
 const getData = (type) => JSON.parse(fs.readFileSync(CONFIG.dataFiles[type]));
 const saveData = (type, data) => fs.writeFileSync(CONFIG.dataFiles[type], JSON.stringify(data, null, 2));
 
@@ -64,34 +66,27 @@ class ImageGenerator {
     const canvas = createCanvas(800, 400);
     const ctx = canvas.getContext('2d');
 
-    // Load images
-    const [attackerImg, defenderImg, bgImg] = await Promise.all([
+    const [attackerImg, defenderImg] = await Promise.all([
       loadImage(attacker.image).catch(() => loadImage('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png')),
-      loadImage(defender.image).catch(() => loadImage('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png')),
-      loadImage('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png').catch(() => null)
+      loadImage(defender.image).catch(() => loadImage('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'))
     ]);
 
-    // Draw background
     ctx.fillStyle = this.getTypeColor(attacker.types[0]);
     ctx.fillRect(0, 0, canvas.width/2, canvas.height);
     ctx.fillStyle = this.getTypeColor(defender.types[0]);
     ctx.fillRect(canvas.width/2, 0, canvas.width/2, canvas.height);
 
-    // Draw Pokémon
     ctx.drawImage(attackerImg, 50, 150, 250, 250);
     ctx.drawImage(defenderImg, 500, 150, 250, 250);
 
-    // Draw HP bars
     this.drawHPBar(ctx, attacker, 50, 100, 300);
     this.drawHPBar(ctx, defender, 450, 100, 300);
 
-    // Draw attack effect
     ctx.fillStyle = this.getMoveColor(move);
     ctx.beginPath();
     ctx.arc(600, 250, 30 + damage/3, 0, Math.PI * 2);
     ctx.fill();
 
-    // Add text
     ctx.fillStyle = 'white';
     ctx.font = 'bold 24px Arial';
     ctx.fillText(`${attacker.name.toUpperCase()}`, 50, 50);
@@ -105,10 +100,8 @@ class ImageGenerator {
     ctx.fillText(`${attacker.name} used ${move.toUpperCase()}!`, 50, 350);
     ctx.fillText(`-${damage} HP!`, 600, 350);
 
-    // Save to file
     const filename = path.join(CONFIG.imageTempDir, `battle_${Date.now()}.png`);
-    const buffer = canvas.toBuffer();
-    fs.writeFileSync(filename, buffer);
+    fs.writeFileSync(filename, canvas.toBuffer());
     return filename;
   }
 
@@ -116,20 +109,16 @@ class ImageGenerator {
     const canvas = createCanvas(600, 400);
     const ctx = canvas.getContext('2d');
 
-    // Draw background
     ctx.fillStyle = success ? '#27ae60' : '#e74c3c';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw Pokémon
     const pokemonImg = await loadImage(pokemon.image).catch(() => 
       loadImage('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'));
     ctx.drawImage(pokemonImg, 150, 50, 300, 300);
 
-    // Draw Pokéball
     const ballImg = await loadImage('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png');
     ctx.drawImage(ballImg, 250, 300, 100, 100);
 
-    // Add sparkle effect if successful
     if (success) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       for (let i = 0; i < 5; i++) {
@@ -145,14 +134,9 @@ class ImageGenerator {
       }
     }
 
-    // Add text
     ctx.fillStyle = 'white';
     ctx.font = 'bold 36px Arial';
-    ctx.fillText(
-      success ? 'GOTCHA!' : 'OH NO!', 
-      200, 
-      380
-    );
+    ctx.fillText(success ? 'GOTCHA!' : 'OH NO!', 200, 380);
     ctx.font = '24px Arial';
     ctx.fillText(
       success ? `${pokemon.name.toUpperCase()} was caught!` : `${pokemon.name.toUpperCase()} broke free!`,
@@ -169,29 +153,24 @@ class ImageGenerator {
     const canvas = createCanvas(800, 400);
     const ctx = canvas.getContext('2d');
 
-    // Load images
     const [beforeImg, afterImg] = await Promise.all([
       loadImage(before.image).catch(() => loadImage('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png')),
       loadImage(after.image).catch(() => loadImage('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'))
     ]);
 
-    // Draw background
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
     gradient.addColorStop(0, '#8e44ad');
     gradient.addColorStop(1, '#3498db');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw Pokémon
     ctx.drawImage(beforeImg, 100, 100, 250, 250);
     ctx.drawImage(afterImg, 450, 100, 250, 250);
 
-    // Add evolution arrow
     ctx.fillStyle = 'white';
     ctx.font = 'bold 72px Arial';
     ctx.fillText('➔', 350, 250);
 
-    // Add text
     ctx.font = 'bold 36px Arial';
     ctx.fillText('EVOLUTION', 300, 50);
     ctx.font = '28px Arial';
@@ -206,20 +185,16 @@ class ImageGenerator {
   static drawHPBar(ctx, pokemon, x, y, width) {
     const hpPercent = pokemon.stats.hp / pokemon.stats.maxHp;
     
-    // Background
     ctx.fillStyle = '#333';
     ctx.fillRect(x, y, width, 20);
     
-    // HP bar
     ctx.fillStyle = hpPercent > 0.5 ? '#2ecc71' : hpPercent > 0.2 ? '#f39c12' : '#e74c3c';
     ctx.fillRect(x, y, width * hpPercent, 20);
     
-    // Border
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, width, 20);
     
-    // Text
     ctx.fillStyle = 'white';
     ctx.font = 'bold 16px Arial';
     ctx.fillText(`${pokemon.stats.hp}/${pokemon.stats.maxHp}`, x + 5, y + 15);
@@ -250,7 +225,6 @@ class ImageGenerator {
   }
 
   static getMoveColor(move) {
-    // This would ideally come from move data, simplified here
     const moveTypes = {
       thunderbolt: '#F8D030',
       flamethrower: '#F08030',
@@ -272,6 +246,7 @@ class PokemonSystem {
         id: data.id,
         name: data.name,
         level: 5,
+        experience: 0,
         stats: {
           hp: data.stats[0].base_stat,
           maxHp: data.stats[0].base_stat,
@@ -290,28 +265,26 @@ class PokemonSystem {
     }
   }
 
-  static async generateGymTeam(type, count=3) {
-    const { data } = await axios.get(`${CONFIG.pokeapi}/type/${type}`);
-    const pokemonPool = data.pokemon.map(p => p.pokemon.name);
-    const team = [];
-    
-    for (let i = 0; i < count; i++) {
-      const randomPokemon = pokemonPool[Math.floor(Math.random() * pokemonPool.length)];
-      const pokemon = await this.fetchPokemon(randomPokemon);
-      pokemon.level = 15 + Math.floor(Math.random() * 10); // Gym Pokémon are stronger
-      team.push(pokemon);
+  static async fetchMove(moveName) {
+    try {
+      const { data } = await axios.get(`${CONFIG.pokeapi}/move/${moveName}`);
+      return {
+        name: data.name,
+        power: data.power || 40,
+        type: data.type.name,
+        accuracy: data.accuracy || 100
+      };
+    } catch {
+      return { name: moveName, power: 40, type: "normal", accuracy: 100 };
     }
-    
-    return team;
   }
 
-  static calculateDamage(attacker, defender, move) {
-    // Simplified damage calculation
-    const basePower = 50; // Would normally come from move data
-    const attack = attacker.stats.attack;
-    const defense = defender.stats.defense;
-    const levelFactor = (2 * attacker.level) / 5 + 2;
-    const damage = Math.floor((levelFactor * basePower * attack / defense) / 50) + 2;
+  static async calculateDamage(attacker, defender, moveName) {
+    const move = await this.fetchMove(moveName);
+    const crit = Math.random() < 0.1 ? 1.5 : 1;
+    const damage = Math.floor(
+      (((2 * attacker.level) / 5 + 2) * move.power * (attacker.stats.attack / defender.stats.defense)) / 50 + 2
+    ) * crit;
     return Math.max(1, damage);
   }
 
@@ -322,7 +295,8 @@ class PokemonSystem {
   static async evolvePokemon(pokemon) {
     if (!this.canEvolve(pokemon)) return null;
     const evolved = await this.fetchPokemon(pokemon.evolution);
-    evolved.level = pokemon.level; // Keep the same level
+    evolved.level = pokemon.level;
+    evolved.experience = pokemon.experience;
     return evolved;
   }
 }
@@ -345,7 +319,7 @@ class BattleSystem {
     let result = { status: 'continue' };
     
     if (action.type === 'attack') {
-      const damage = PokemonSystem.calculateDamage(attacker.activePokemon, defender.activePokemon, action.move);
+      const damage = await PokemonSystem.calculateDamage(attacker.activePokemon, defender.activePokemon, action.move);
       defender.activePokemon.stats.hp = Math.max(0, defender.activePokemon.stats.hp - damage);
       
       this.battleLog.push(
@@ -360,17 +334,29 @@ class BattleSystem {
         result = { status: 'continue', damage };
       }
     } else if (action.type === 'switch') {
-      // Handle Pokémon switching
-    } else if (action.type === 'item') {
-      // Handle item usage
+      if (await this.switchPokemon(this.currentTurn, action.pokemonIndex)) {
+        result = { status: 'switched' };
+      } else {
+        result = { status: 'failed' };
+      }
     }
     
-    // Switch turn if battle continues
     if (result.status === 'continue') {
       this.currentTurn = this.currentTurn === 'player1' ? 'player2' : 'player1';
     }
     
     return result;
+  }
+
+  async switchPokemon(playerKey, pokemonIndex) {
+    const newActive = this.players[playerKey].team[pokemonIndex];
+    if (newActive.stats.hp <= 0) return false;
+    
+    this.players[playerKey].activePokemon = newActive;
+    this.battleLog.push(
+      `${this.players[playerKey].name} switched to ${newActive.name}!`
+    );
+    return true;
   }
 
   checkBattleEnd() {
@@ -381,22 +367,18 @@ class BattleSystem {
     if (player2Lost) return this.players.player1;
     return null;
   }
-
-  getBattleStatus() {
-    const attacker = this.players[this.currentTurn];
-    const defender = this.players[this.currentTurn === 'player1' ? 'player2' : 'player1'];
-    
-    let status = `*${attacker.name}'s Turn*\n`;
-    status += `Active: ${attacker.activePokemon.name} (Lv. ${attacker.activePokemon.level}) - HP: ${attacker.activePokemon.stats.hp}/${attacker.activePokemon.stats.maxHp}\n\n`;
-    status += `*Available Moves:*\n${attacker.activePokemon.moves.join(', ')}\n\n`;
-    status += `*Opponent:* ${defender.activePokemon.name} - HP: ${defender.activePokemon.stats.hp}/${defender.activePokemon.stats.maxHp}`;
-    
-    return status;
-  }
 }
 
 // WhatsApp Bot
 async function startBot() {
+  // Create HTTP server for Render
+  const http = require('http');
+  const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Pokémon WhatsApp Bot is running');
+  });
+  server.listen(process.env.PORT || 3000);
+
   const { state, saveCreds } = await useMultiFileAuthState("./session");
   const bot = makeWASocket({
     auth: state,
@@ -404,17 +386,20 @@ async function startBot() {
     logger: pino({ level: "silent" })
   });
 
-  // Active battles storage
   const activeBattles = {};
 
-  // 6-Digit Pairing
+  // Automatic pairing for Render
   if (CONFIG.usePairingCode && !bot.authState.creds.registered) {
-    const phoneNumber = await question("Enter your WhatsApp number (e.g., 2349076119745): ");
-    const code = await bot.requestPairingCode(phoneNumber.trim());
-    console.log(`Pairing code: ${code}`);
+    console.log("Requesting pairing code...");
+    try {
+      const code = await bot.requestPairingCode(CONFIG.phoneNumber);
+      console.log(`Pairing code: ${code}`);
+      fs.writeFileSync('pairing_code.txt', `Your pairing code: ${code}\n\nEnter this in WhatsApp to link your device.`);
+    } catch (e) {
+      console.error("Pairing failed:", e);
+    }
   }
 
-  // Event Handlers
   bot.ev.on("connection.update", (update) => {
     if (update.connection === "open") {
       console.log(chalk.green("Bot connected to WhatsApp!"));
@@ -456,7 +441,7 @@ async function startBot() {
     }
   });
 
-  // Command Handlers
+  // Command Handlers (keep all your existing command handlers)
   async function handleStart(bot, sender) {
     const trainers = getData("trainers");
     if (trainers[sender]) {
@@ -468,7 +453,7 @@ async function startBot() {
       name: "Trainer",
       team: [],
       badges: [],
-      items: { pokeball: 5, potion: 3 },
+      items: { pokeball: 5, potion: 3, revive: 1 },
       starter: null
     };
     saveData("trainers", trainers);
@@ -521,7 +506,6 @@ async function startBot() {
       return;
     }
 
-    // Check if player has pokeballs
     if (trainers[sender].items.pokeball <= 0) {
       await bot.sendMessage(sender, { text: "You're out of Poké Balls! Buy more with !item buy pokeball" });
       return;
@@ -533,19 +517,15 @@ async function startBot() {
       return;
     }
 
-    // Use a pokeball
     trainers[sender].items.pokeball--;
     saveData("trainers", trainers);
 
-    // 50% base catch rate, higher for lower level Pokémon
     const catchRate = 0.5 + (5 / pokemon.level) * 0.1;
     const success = Math.random() < catchRate;
 
-    // Generate capture image
     const captureImg = await ImageGenerator.generateCaptureScene(pokemon, success);
     
     if (success) {
-      // Add to team if space available
       if (trainers[sender].team.length < CONFIG.maxTeamSize) {
         trainers[sender].team.push(pokemon);
         saveData("trainers", trainers);
@@ -610,20 +590,17 @@ async function startBot() {
       return;
     }
 
-    // Check if player has Pokémon
     const playerTeam = trainers[sender]?.team.filter(p => p.stats.hp > 0);
     if (!playerTeam?.length) {
       await bot.sendMessage(sender, { text: "All your Pokémon are fainted! Heal them with potions first." });
       return;
     }
 
-    // Initialize gym team if needed
     if (gyms[gymName].team.length === 0) {
       gyms[gymName].team = await PokemonSystem.generateGymTeam(gyms[gymName].type);
       saveData("gyms", gyms);
     }
 
-    // Start battle
     activeBattles[sender] = new BattleSystem(
       { 
         name: trainers[sender].name, 
@@ -683,14 +660,17 @@ async function startBot() {
           return;
         }
 
-        // Heal first Pokémon in team
-        if (trainers[sender].team.length === 0) {
+        let pokemon;
+        if (activeBattles[sender]) {
+          pokemon = activeBattles[sender].players.player1.activePokemon;
+        } else if (trainers[sender].team.length > 0) {
+          pokemon = trainers[sender].team[0];
+        } else {
           await bot.sendMessage(sender, { text: "You don't have any Pokémon to heal!" });
           return;
         }
 
-        const pokemon = trainers[sender].team[0];
-        const healAmount = 20; // From CONFIG
+        const healAmount = 20;
         pokemon.stats.hp = Math.min(pokemon.stats.maxHp, pokemon.stats.hp + healAmount);
         
         trainers[sender].items.potion--;
@@ -699,6 +679,25 @@ async function startBot() {
         await bot.sendMessage(sender, {
           text: `Used Potion on ${pokemon.name}! It recovered ${healAmount} HP.\n` +
                 `Current HP: ${pokemon.stats.hp}/${pokemon.stats.maxHp}`
+        });
+      } else if (item === "revive") {
+        if (trainers[sender].items.revive <= 0) {
+          await bot.sendMessage(sender, { text: "You're out of revives!" });
+          return;
+        }
+
+        const faintedPokemon = trainers[sender].team.find(p => p.stats.hp <= 0);
+        if (!faintedPokemon) {
+          await bot.sendMessage(sender, { text: "No fainted Pokémon to revive!" });
+          return;
+        }
+
+        faintedPokemon.stats.hp = Math.floor(faintedPokemon.stats.maxHp / 2);
+        trainers[sender].items.revive--;
+        saveData("trainers", trainers);
+
+        await bot.sendMessage(sender, {
+          text: `${faintedPokemon.name} was revived! (HP: ${faintedPokemon.stats.hp}/${faintedPokemon.stats.maxHp})`
         });
       } else {
         await bot.sendMessage(sender, { text: "Unknown item. Use !item to see your inventory." });
@@ -734,10 +733,8 @@ async function startBot() {
       return;
     }
 
-    // Generate evolution image
     const evolveImg = await ImageGenerator.generateEvolutionScene(pokemon, evolvedForm);
     
-    // Replace Pokémon in team
     trainers[sender].team[pokemonIndex] = evolvedForm;
     saveData("trainers", trainers);
 
@@ -748,8 +745,24 @@ async function startBot() {
   }
 
   async function handleBattleChallenge(bot, sender, args) {
-    await bot.sendMessage(sender, { 
-      text: "Player vs Player battles coming soon! For now, challenge gyms with !gym" 
+    const trainers = getData("trainers");
+    const opponentJid = args[0];
+
+    if (!opponentJid || !trainers[sender]?.team.length || !trainers[opponentJid]?.team.length) {
+      await bot.sendMessage(sender, { 
+        text: "Usage: !battle <opponent-number>\nExample: !battle 1234567890@s.whatsapp.net" 
+      });
+      return;
+    }
+
+    activeBattles[sender] = new BattleSystem(
+      { name: trainers[sender].name, team: trainers[sender].team },
+      { name: trainers[opponentJid].name, team: trainers[opponentJid].team }
+    );
+
+    await bot.sendMessage(sender, {
+      text: `Battle started vs ${trainers[opponentJid].name}!\n\n` +
+            "Commands: !attack <move>, !switch <1-6>, !use potion"
     });
   }
 
@@ -763,6 +776,7 @@ async function startBot() {
         "!gym - List/challenge gyms\n" +
         "!item - Use/view your items\n" +
         "!evolve <number> - Evolve a Pokémon\n" +
+        "!battle <player> - Battle another trainer\n" +
         "!help - Show this menu"
     });
   }
@@ -774,41 +788,46 @@ async function startBot() {
     if (cmd === "!attack" && args[0]) {
       action = { type: "attack", move: args[0] };
     } else if (cmd === "!switch" && args[0]) {
-      // Handle switching (simplified for example)
-      await bot.sendMessage(sender, { text: "Switching Pokémon coming in next update!" });
-      return;
+      const pokemonIndex = parseInt(args[0]) - 1;
+      if (pokemonIndex >= 0 && pokemonIndex < 6) {
+        action = { type: "switch", pokemonIndex };
+      } else {
+        await bot.sendMessage(sender, { text: "Invalid Pokémon number (1-6)!" });
+        return;
+      }
     } else if (cmd === "!use" && args[0] === "potion") {
-      // Handle item usage (simplified for example)
-      await bot.sendMessage(sender, { text: "Using items in battle coming in next update!" });
+      await handleItem(bot, sender, ["use", "potion"]);
       return;
     } else {
-      await bot.sendMessage(sender, { text: "In battle commands: !attack <move>, !switch <number>, !use potion" });
+      await bot.sendMessage(sender, { 
+        text: "In battle commands:\n!attack <move>\n!switch <1-6>\n!use potion" 
+      });
       return;
     }
 
     const result = await battle.executeTurn(action);
     
-    // Generate battle image
+    if (result.status === 'failed') {
+      await bot.sendMessage(sender, { text: "Cannot switch to that Pokémon!" });
+      return;
+    }
+
     const battleImg = await ImageGenerator.generateBattleScene(
       battle.players[battle.currentTurn === 'player1' ? 'player1' : 'player2'].activePokemon,
       battle.players[battle.currentTurn === 'player1' ? 'player2' : 'player1'].activePokemon,
-      action.move,
+      action.move || "switch",
       result.damage || 0
     );
 
-    // Send update
     await bot.sendMessage(sender, {
       image: { url: battleImg },
       caption: battle.battleLog.slice(-2).join("\n\n")
     });
 
-    // Check for battle end
-    if (result.status === 'knockout') {
-      const winner = battle.checkBattleEnd();
-      if (winner) {
-        await handleBattleEnd(bot, sender, battle, winner);
-        delete activeBattles[sender];
-      }
+    const winner = battle.checkBattleEnd();
+    if (winner) {
+      await handleBattleEnd(bot, sender, battle, winner);
+      delete activeBattles[sender];
     }
   }
 
@@ -816,13 +835,26 @@ async function startBot() {
     const trainers = getData("trainers");
     const gyms = getData("gyms");
     
-    // Check if this was a gym battle
     const isGymBattle = Object.values(gyms).some(gym => gym.leader === winner.name);
     
     if (isGymBattle && winner.name === trainers[sender].name) {
       const gym = Object.values(gyms).find(g => g.leader === battle.players.player2.name);
       gym.defeated = true;
       trainers[sender].badges.push(gym.name);
+      
+      trainers[sender].team.forEach(p => {
+        if (p.stats.hp > 0) {
+          p.experience += 100;
+          if (p.experience >= p.level * 100) {
+            p.level++;
+            p.experience = 0;
+            bot.sendMessage(sender, {
+              text: `${p.name} leveled up to Lv. ${p.level}!`
+            });
+          }
+        }
+      });
+      
       saveData("gyms", gyms);
       saveData("trainers", trainers);
       
@@ -830,6 +862,19 @@ async function startBot() {
         text: `🏆 You defeated ${gym.leader} and earned the ${gym.name} Badge! 🏆`
       });
     } else if (winner.name === trainers[sender].name) {
+      trainers[sender].team.forEach(p => {
+        if (p.stats.hp > 0) {
+          p.experience += 50;
+          if (p.experience >= p.level * 100) {
+            p.level++;
+            p.experience = 0;
+            bot.sendMessage(sender, {
+              text: `${p.name} leveled up to Lv. ${p.level}!`
+            });
+          }
+        }
+      });
+      saveData("trainers", trainers);
       await bot.sendMessage(sender, {
         text: `You won the battle! Your Pokémon gained experience!`
       });
