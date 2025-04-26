@@ -1,7 +1,7 @@
 {
   "name": "whatsapp-bot",
   "version": "1.0.0",
-  "description": "WhatsApp bot project",
+  "description": "Pokémon WhatsApp Bot with PvP Battles, Evolution, and Gym Challenges",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -10,7 +10,9 @@
   "keywords": [
     "whatsapp",
     "bot",
-    "baileys"
+    "pokemon",
+    "baileys",
+    "game"
   ],
   "author": "𝔓𝔯𝔢𝔪𝔦𝔲𝔪 𝔇𝔲𝔫𝔤𝔢𝔬𝔫",
   "license": "ISC",
@@ -18,8 +20,10 @@
     "@whiskeysockets/baileys": "^6.11.3",
     "axios": "^1.6.8",
     "canvas": "^2.11.2",
-    "chalk": "^5.3.0",
-    "fs": "0.0.1-security",
-    "path": "^0.12.7"
+    "chalk": "^4.1.2",
+    "pino": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
