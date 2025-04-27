@@ -24,7 +24,7 @@ const CONFIG = {
     revive: { type: "revive", quantity: 1 },
     superball: { type: "catch", catchRate: 1.5, quantity: 2 }
   },
-  phoneNumber: process.env.WHATSAPP_NUMBER || "1234567890" // Replace with your number
+  phoneNumber: process.env.WHATSAPP_NUMBER || "2347033252751" // Replace with your number
 };
 
 // Initialize data storage and temp directory
