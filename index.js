@@ -5,6 +5,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const { createCanvas, loadImage } = require("canvas");
+const http = require('http');
 
 // CONFIGURATION
 const CONFIG = {
@@ -24,8 +25,16 @@ const CONFIG = {
     revive: { type: "revive", quantity: 1 },
     superball: { type: "catch", catchRate: 1.5, quantity: 2 }
   },
-  phoneNumber: process.env.WHATSAPP_NUMBER || "2347033252751" // Replace with your number
+  phoneNumber: process.env.WHATSAPP_NUMBER // Only from environment variable
 };
+
+// Validate phone number exists
+if (!CONFIG.phoneNumber) {
+  console.error("❌ ERROR: WhatsApp number not configured!");
+  console.error("Please set WHATSAPP_NUMBER environment variable");
+  process.exit(1);
+}
+console.log("ℹ️ Using WhatsApp number:", CONFIG.phoneNumber);
 
 // Initialize data storage and temp directory
 function initData() {
@@ -372,12 +381,18 @@ class BattleSystem {
 // WhatsApp Bot
 async function startBot() {
   // Create HTTP server for Render
-  const http = require('http');
   const server = http.createServer((req, res) => {
     res.writeHead(200);
     res.end('Pokémon WhatsApp Bot is running');
   });
-  server.listen(process.env.PORT || 3000);
+  server.listen(process.env.PORT || 3000, () => {
+    console.log(`Server running on port ${process.env.PORT || 3000}`);
+  });
+
+  // Ensure session directory exists
+  if (!fs.existsSync("./session")) {
+    fs.mkdirSync("./session", { recursive: true });
+  }
 
   const { state, saveCreds } = await useMultiFileAuthState("./session");
   const bot = makeWASocket({
@@ -388,28 +403,30 @@ async function startBot() {
 
   const activeBattles = {};
 
-  // Automatic pairing for Render
+  // Automatic pairing
   if (CONFIG.usePairingCode && !bot.authState.creds.registered) {
-    console.log("Requesting pairing code...");
+    console.log("Requesting pairing code for:", CONFIG.phoneNumber);
     try {
       const code = await bot.requestPairingCode(CONFIG.phoneNumber);
-      console.log(`Pairing code: ${code}`);
-      fs.writeFileSync('pairing_code.txt', `Your pairing code: ${code}\n\nEnter this in WhatsApp to link your device.`);
+      console.log(`‼️ Pairing code: ${code} ‼️`);
+      console.log("Enter this in WhatsApp: Settings → Linked Devices → Link a Device");
+      fs.writeFileSync('pairing_code.txt', `Pairing code: ${code}\nEnter in WhatsApp: Settings → Linked Devices`);
     } catch (e) {
       console.error("Pairing failed:", e);
+      process.exit(1);
     }
   }
 
   bot.ev.on("connection.update", (update) => {
     if (update.connection === "open") {
-      console.log(chalk.green("Bot connected to WhatsApp!"));
-      bot.sendMessage("1234567890@s.whatsapp.net", { 
-        text: "Pokémon Bot is now online! Use !help to see commands." 
-      }).catch(console.error);
+      console.log(chalk.green("✅ WhatsApp connected!"));
+    }
+    if (update.connection === "close") {
+      console.log(chalk.red("⚠️ WhatsApp disconnected!"));
     }
   });
 
-  bot.ev.on("messages.upsert", async ({ messages }) => {
+bot.ev.on("messages.upsert", async ({ messages }) => {
     const m = messages[0];
     if (!m.message || m.key.remoteJid === "status@broadcast") return;
 
@@ -888,6 +905,10 @@ async function startBot() {
   // System
   bot.ev.on("creds.update", saveCreds);
   console.log(chalk.green.bold("Pokémon Bot successfully started!"));
+}
+
+// Keep process alive
+  setInterval(() => {}, 1000);
 }
 
 // Start the bot
