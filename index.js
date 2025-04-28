@@ -280,13 +280,13 @@ class PokemonSystem {
   }
 
  static async calculateDamage(attacker, defender, moveName) {
-  const move = await this.fetchMove(moveName);
-  const crit = Math.random() < 0.1 ? 1.5 : 1;
-  const damage = Math.floor(
-    ((((2 * attacker.level) / 5 + 2) * move.power * (attacker.stats.attack / defender.stats.defense)) / 50 + 2
-  ) * crit;
-  return Math.max(1, damage);
-}
+    const move = await this.fetchMove(moveName);
+    const crit = Math.random() < 0.1 ? 1.5 : 1;
+    const damage = Math.floor(
+      (((2 * attacker.level) / 5 + 2) * move.power * (attacker.stats.attack / defender.stats.defense)) / 50 + 2
+    ) * crit;
+    return Math.max(1, damage);
+  }
 
   static canEvolve(pokemon) {
     return pokemon.evolution && pokemon.level >= 30;
