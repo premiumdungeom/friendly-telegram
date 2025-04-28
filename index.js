@@ -20,7 +20,7 @@ const CONFIG = {
   imageTempDir: "./temp",
   items: {
     pokeball: { type: "catch", quantity: 5 },
-    potion: { type: "heal", healAmount: 20, quanmtity: 3 },
+    potion: { type: "heal", healAmount: 20, quantity: 3 },
     revive: { type: "revive", quantity: 1 },
     superball: { type: "catch", catchRate: 1.5, quantity: 2 }
   },
@@ -283,7 +283,7 @@ class PokemonSystem {
     const move = await this.fetchMove(moveName);
     const crit = Math.random() < 0.1 ? 1.5 : 1;
     const damage = Math.floor(
-      (((2 * attacker.level) / 5 + 2) * move.power * (attacker.stats.attack / defender.stats.defense)) / 50 + 2
+      ((((2 * attacker.level) / 5 + 2) * move.power * (attacker.stats.attack / defender.stats.defense)) / 50 + 2
     ) * crit;
     return Math.max(1, damage);
   }
@@ -298,6 +298,28 @@ class PokemonSystem {
     evolved.level = pokemon.level;
     evolved.experience = pokemon.experience;
     return evolved;
+  }
+
+  static async generateGymTeam(type) {
+    const typeMap = {
+      rock: ["geodude", "onix", "rhyhorn"],
+      water: ["staryu", "starmie", "psyduck"],
+      electric: ["voltorb", "magnemite", "pikachu"],
+      grass: ["oddish", "bellsprout", "tangela"]
+    };
+    
+    const team = [];
+    const pokemonList = typeMap[type] || ["geodude", "onix", "rhyhorn"];
+    
+    for (let i = 0; i < 3; i++) {
+      const pokemon = await this.fetchPokemon(pokemonList[i]);
+      if (pokemon) {
+        pokemon.level = 15 + (i * 5); // Level 15, 20, 25
+        team.push(pokemon);
+      }
+    }
+    
+    return team;
   }
 }
 
@@ -441,7 +463,7 @@ async function startBot() {
     }
   });
 
-  // Command Handlers (keep all your existing command handlers)
+  // Command Handlers
   async function handleStart(bot, sender) {
     const trainers = getData("trainers");
     if (trainers[sender]) {
@@ -889,9 +911,12 @@ async function startBot() {
   bot.ev.on("creds.update", saveCreds);
   console.log(chalk.green.bold("Pokémon Bot successfully started!"));
 
-  // Keep process alive (inside the function)
+  // Keep process alive
   setInterval(() => {}, 1000);
 }
 
 // Start the bot
 startBot().catch(err => {
+  console.error(chalk.red("Bot crashed:"), err);
+  process.exit(1);
+});
